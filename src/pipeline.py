@@ -34,9 +34,9 @@ def load_test_jsonl(path: Path) -> list[EmailRecord]:
             records.append(
                 EmailRecord(
                     email_id=obj.get("id", obj.get("email_id", "")),
-                    subject="",  # test data uses incoming_email only
+                    subject=obj.get("subject", ""),
                     body=obj["incoming_email"],
-                    thread_history="",
+                    thread_history=obj.get("thread_history", ""),
                     gold_needs_reply=obj["needs_reply"],
                     gold_reply=obj.get("gold_reply", ""),
                     category=obj.get("category", ""),
@@ -60,7 +60,8 @@ def run_pipeline(records: list[EmailRecord], retriever: SimpleRetriever, top_k: 
         retrieved_examples = None
 
         if triage_result.label == "needs_reply":
-            retrieved_examples = retriever.retrieve(email.body, top_k=top_k)
+            retrieval_query = "\n".join(part for part in [email.subject, email.body, email.thread_history] if part)
+            retrieved_examples = retriever.retrieve(retrieval_query, top_k=top_k)
             generation = generator.generate(email, retrieved_examples=retrieved_examples)
             generation_score = evaluator.score_generation(email.body, generation.draft_text, email.gold_reply)
 
@@ -172,4 +173,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

@@ -8,9 +8,10 @@
 - ✅ **All code committed and pushed**
 
 ### 2. Dataset
-- ✅ **Training data:** `data/train.jsonl` (20 examples)
-- ✅ **Test data:** `data/test.jsonl` (10 examples)
+- ✅ **Training data:** `data/train.jsonl` (32 examples)
+- ✅ **Test data:** `data/test.jsonl` (12 examples)
 - ✅ **Documentation:** Dataset schema and generation method in README
+- ✅ **Reproducible builder:** `scripts/build_dataset.py`
 - ✅ **Format:** JSONL with `incoming_email`, `gold_reply`, `category`, `needs_reply`
 
 ### 3. Gen-AI Response Generator

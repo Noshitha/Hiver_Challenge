@@ -16,8 +16,9 @@ A fully offline, end-to-end pipeline that:
 
 ## Project structure
 
-- `data/train.jsonl` — 20 historical email/reply pairs for retrieval
-- `data/test.jsonl` — 10 held-out test cases with gold labels
+- `scripts/build_dataset.py` — reproducible synthetic dataset builder
+- `data/train.jsonl` — 32 historical email/reply pairs for retrieval
+- `data/test.jsonl` — 12 held-out test cases with gold labels
 - `src/triage.py` — rules-first + optional LLM triage
 - `src/retrieve.py` — TF-IDF-based similarity retrieval (no external deps)
 - `src/generate.py` — RAG prompt-based reply generation
@@ -90,6 +91,7 @@ A fully offline, end-to-end pipeline that:
 ## How to run
 
 ```bash
+python3 scripts/build_dataset.py
 python3 src/pipeline.py --train data/train.jsonl --test data/test.jsonl --top-k 3
 ```
 
@@ -97,7 +99,7 @@ python3 src/pipeline.py --train data/train.jsonl --test data/test.jsonl --top-k 
 - `--top-k N` — retrieve N similar examples (default: 3)
 - `--output-dir DIR` — output directory (default: `outputs/`)
 
-**Runtime:** ~5-10 seconds for 10 test emails (offline mode)
+**Runtime:** ~5-10 seconds for 12 test emails (offline mode)
 
 ## Outputs
 
@@ -120,31 +122,35 @@ python3 src/pipeline.py --train data/train.jsonl --test data/test.jsonl --top-k 
 
 ## Dataset
 
-**Training set (`data/train.jsonl`):** 20 synthetic but realistic support email/reply pairs covering:
+**Training set (`data/train.jsonl`):** 32 synthetic but realistic support email/reply pairs covering:
 - Billing (invoices, charges, refunds)
-- Technical (password resets, integrations)
-- Account management (upgrades, downgrades, user additions)
-- How-to questions (exports, templates, workflows)
+- Technical (password resets, integrations, webhooks)
+- Account management (upgrades, downgrades, user additions, user removal)
+- How-to questions (exports, templates, workflows, SSO, roles)
+- Deliverability (bounce and sending issues)
 - Security incidents
 - Escalations
 
-**Test set (`data/test.jsonl`):** 10 held-out examples with same categories, intentionally varied phrasing to test retrieval robustness.
+**Test set (`data/test.jsonl`):** 12 held-out examples with the same scenario families, intentionally varied phrasing to test retrieval robustness.
 
 **Dataset schema:**
 ```json
 {
   "id": "train_001",
+  "subject": "Need April invoice for reimbursement",
   "incoming_email": "Customer's question or request",
+  "thread_history": "Optional prior context",
   "gold_reply": "Reference human-written reply",
   "category": "billing",
-  "needs_reply": "needs_reply"
+  "needs_reply": "needs_reply",
+  "policy_tags": ["invoice_request"]
 }
 ```
 
 **Why synthetic?**
 - Real customer support data is private/sensitive
 - Synthetic data allows transparent sharing and reproducible evaluation
-- Covers representative scenarios across common support categories
+- Covers representative scenarios across common support categories with richer subjects, thread context, and policy tags
 - Documented in submission (not hidden or proprietary)
 
 ## Limitations and future work
@@ -174,4 +180,3 @@ python3 src/pipeline.py --train data/train.jsonl --test data/test.jsonl --top-k 
 ✅ All code is original work completed during challenge window  
 
 **Repository:** [https://github.com/Noshitha/Hiver_Challenge](https://github.com/Noshitha/Hiver_Challenge)
-

@@ -25,7 +25,7 @@ class SimpleRetriever:
         scores: list[tuple[float, dict]] = []
 
         for example in self.examples:
-            example_vec = self._vectorize(example["incoming_email"])
+            example_vec = self._vectorize(self._example_text(example))
             similarity = self._cosine_similarity(query_vec, example_vec)
             scores.append((similarity, example))
 
@@ -43,7 +43,7 @@ class SimpleRetriever:
 
         doc_freq: Counter[str] = Counter()
         for example in self.examples:
-            tokens = set(self._tokenize(example["incoming_email"]))
+            tokens = set(self._tokenize(self._example_text(example)))
             doc_freq.update(tokens)
 
         num_docs = len(self.examples)
@@ -66,8 +66,23 @@ class SimpleRetriever:
 
     @staticmethod
     def _tokenize(text: str) -> list[str]:
-        """Simple whitespace tokenization with lowercasing."""
-        return text.lower().split()
+        """Tokenize on alphanumeric spans for more stable retrieval."""
+        cleaned = "".join(ch.lower() if ch.isalnum() else " " for ch in text)
+        return [token for token in cleaned.split() if token]
+
+    @staticmethod
+    def _example_text(example: dict) -> str:
+        return " ".join(
+            part
+            for part in [
+                example.get("subject", ""),
+                example.get("incoming_email", ""),
+                example.get("thread_history", ""),
+                example.get("category", ""),
+                " ".join(example.get("policy_tags", [])),
+            ]
+            if part
+        )
 
     @staticmethod
     def _cosine_similarity(vec1: dict[str, float], vec2: dict[str, float]) -> float:

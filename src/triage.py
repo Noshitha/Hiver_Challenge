@@ -14,6 +14,10 @@ NO_REPLY_PATTERNS = [
     r"out of office",
     r"auto[- ]?reply",
     r"\bseen\b",
+    r"\bthanks( again)?\b",
+    r"\bthank you\b",
+    r"no further help needed",
+    r"all set",
 ]
 
 HUMAN_REVIEW_PATTERNS = [
@@ -22,6 +26,10 @@ HUMAN_REVIEW_PATTERNS = [
     r"legal",
     r"breach",
     r"security",
+    r"suspicious login",
+    r"suspicious logins",
+    r"unauthorized",
+    r"lock[- ]?down",
     r"unacceptable",
     r"escalat",
     r"lawyer",
@@ -101,4 +109,3 @@ class TriageEngine:
             except json.JSONDecodeError:
                 return None
         return None
-
