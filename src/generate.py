@@ -10,17 +10,75 @@ class ReplyGenerator:
     def __init__(self, llm_client: LLMClient) -> None:
         self.llm_client = llm_client
 
-    def generate(self, email: EmailRecord) -> GenerationResult:
-        if self.llm_client.enabled:
+    def generate(self, email: EmailRecord, retrieved_examples: list[dict] | None = None) -> GenerationResult:
+        """
+        Generate reply with optional retrieval-augmented context.
+        """
+        retrieved_ids = [ex["id"] for ex in retrieved_examples] if retrieved_examples else []
+        
+        if self.llm_client.enabled and retrieved_examples:
+            drafted = self._generate_with_rag(email, retrieved_examples)
+            if drafted:
+                flags = self._safety_flags(drafted)
+                confidence = 0.82 if not flags else 0.68
+                return GenerationResult(
+                    draft_text=drafted,
+                    confidence=confidence,
+                    flags=flags,
+                    mode="rag",
+                    retrieved_example_ids=retrieved_ids
+                )
+        elif self.llm_client.enabled:
             drafted = self._generate_with_llm(email)
             if drafted:
                 flags = self._safety_flags(drafted)
                 confidence = 0.78 if not flags else 0.64
-                return GenerationResult(draft_text=drafted, confidence=confidence, flags=flags, mode="llm")
+                return GenerationResult(
+                    draft_text=drafted,
+                    confidence=confidence,
+                    flags=flags,
+                    mode="llm",
+                    retrieved_example_ids=retrieved_ids
+                )
+        
         drafted = self._generate_heuristic(email)
         flags = self._safety_flags(drafted)
         confidence = 0.66 if not flags else 0.58
-        return GenerationResult(draft_text=drafted, confidence=confidence, flags=flags, mode="heuristic")
+        return GenerationResult(
+            draft_text=drafted,
+            confidence=confidence,
+            flags=flags,
+            mode="heuristic",
+            retrieved_example_ids=retrieved_ids
+        )
+
+    def _generate_with_rag(self, email: EmailRecord, retrieved_examples: list[dict]) -> str | None:
+        """Generate reply using retrieved examples as grounding context."""
+        system_prompt = (
+            "You are a customer support email assistant. "
+            "Use the provided similar examples as reference for style and approach. "
+            "Write concise, empathetic, action-oriented replies. "
+            "Do not copy examples verbatim - adapt them to the current customer's specific situation. "
+            "Do not invent policies, timelines, discounts, or promises not shown in examples."
+        )
+        
+        examples_context = "\n\n".join([
+            f"Example {i+1}:\nCustomer: {ex['incoming_email']}\nReply: {ex['gold_reply']}"
+            for i, ex in enumerate(retrieved_examples[:3])
+        ])
+        
+        user_prompt = (
+            f"Similar past examples:\n{examples_context}\n\n"
+            f"Current customer email:\nSubject: {email.subject}\n{email.body}\n"
+            f"Thread context: {email.thread_history}\n\n"
+            "Requirements:\n"
+            "- 3-6 sentences\n"
+            "- directly answer the customer's ask\n"
+            "- use examples as style guide, not verbatim templates\n"
+            "- include clear next step\n"
+            "- avoid hallucinated commitments\n"
+        )
+        return self.llm_client.complete_text(system_prompt, user_prompt, temperature=0.2)
 
     def _generate_with_llm(self, email: EmailRecord) -> str | None:
         system_prompt = (

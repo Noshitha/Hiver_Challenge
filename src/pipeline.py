@@ -9,17 +9,21 @@ from evaluate import Evaluator
 from generate import ReplyGenerator
 from llm_client import LLMClient
 from models import EmailRecord
+from retrieve import SimpleRetriever
 from triage import TriageEngine
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Hiver challenge offline email pipeline")
-    parser.add_argument("--input", default="data/synthetic_support_emails.jsonl", help="Path to input JSONL dataset")
+    parser = argparse.ArgumentParser(description="Hiver challenge offline email pipeline with RAG")
+    parser.add_argument("--train", default="data/train.jsonl", help="Training data for retrieval")
+    parser.add_argument("--test", default="data/test.jsonl", help="Test data for evaluation")
     parser.add_argument("--output-dir", default="outputs", help="Output directory")
+    parser.add_argument("--top-k", type=int, default=3, help="Number of examples to retrieve")
     return parser.parse_args()
 
 
-def load_jsonl(path: Path) -> list[EmailRecord]:
+def load_test_jsonl(path: Path) -> list[EmailRecord]:
+    """Load test examples into EmailRecord format."""
     records: list[EmailRecord] = []
     with path.open("r", encoding="utf-8") as f:
         for line in f:
@@ -29,11 +33,11 @@ def load_jsonl(path: Path) -> list[EmailRecord]:
             obj = json.loads(line)
             records.append(
                 EmailRecord(
-                    email_id=obj["email_id"],
-                    subject=obj.get("subject", ""),
-                    body=obj.get("body", ""),
-                    thread_history=obj.get("thread_history", ""),
-                    gold_needs_reply=obj["gold_needs_reply"],
+                    email_id=obj.get("id", obj.get("email_id", "")),
+                    subject="",  # test data uses incoming_email only
+                    body=obj["incoming_email"],
+                    thread_history="",
+                    gold_needs_reply=obj["needs_reply"],
                     gold_reply=obj.get("gold_reply", ""),
                     category=obj.get("category", ""),
                 )
@@ -41,7 +45,8 @@ def load_jsonl(path: Path) -> list[EmailRecord]:
     return records
 
 
-def run_pipeline(records: list[EmailRecord]) -> list[dict]:
+def run_pipeline(records: list[EmailRecord], retriever: SimpleRetriever, top_k: int) -> list[dict]:
+    """Run end-to-end pipeline with retrieval-augmented generation."""
     llm = LLMClient()
     triage = TriageEngine(llm)
     generator = ReplyGenerator(llm)
@@ -52,9 +57,11 @@ def run_pipeline(records: list[EmailRecord]) -> list[dict]:
         triage_result = triage.predict(email)
         generation = None
         generation_score = None
+        retrieved_examples = None
 
         if triage_result.label == "needs_reply":
-            generation = generator.generate(email)
+            retrieved_examples = retriever.retrieve(email.body, top_k=top_k)
+            generation = generator.generate(email, retrieved_examples=retrieved_examples)
             generation_score = evaluator.score_generation(email.body, generation.draft_text, email.gold_reply)
 
         outputs.append(
@@ -73,6 +80,7 @@ def run_pipeline(records: list[EmailRecord]) -> list[dict]:
                         "confidence": round(generation.confidence, 4),
                         "flags": generation.flags,
                         "mode": generation.mode,
+                        "retrieved_example_ids": generation.retrieved_example_ids,
                     }
                     if generation
                     else None
@@ -84,7 +92,10 @@ def run_pipeline(records: list[EmailRecord]) -> list[dict]:
                         "correctness": generation_score.correctness,
                         "tone": generation_score.tone,
                         "brevity": generation_score.brevity,
-                        "total_0_100": generation_score.total_0_100,
+                        "rubric_score_0_100": generation_score.rubric_score_0_100,
+                        "reference_similarity_0_100": generation_score.reference_similarity_0_100,
+                        "length_penalty_0_100": generation_score.length_penalty_0_100,
+                        "hybrid_score_0_100": generation_score.hybrid_score_0_100,
                         "rationale": generation_score.rationale,
                     }
                     if generation_score
@@ -119,10 +130,13 @@ def write_outputs(items: list[dict], output_dir: Path) -> None:
                 "predicted_label",
                 "triage_confidence",
                 "generation_mode",
-                "generation_score_0_100",
+                "rubric_score",
+                "similarity_score",
+                "hybrid_score",
             ]
         )
         for item in items:
+            g_score = item.get("generation_score") or {}
             writer.writerow(
                 [
                     item["email_id"],
@@ -130,8 +144,10 @@ def write_outputs(items: list[dict], output_dir: Path) -> None:
                     item["triage"]["gold"],
                     item["triage"]["predicted"],
                     item["triage"]["confidence"],
-                    (item["generation"] or {}).get("mode", ""),
-                    (item["generation_score"] or {}).get("total_0_100", ""),
+                    (item.get("generation") or {}).get("mode", ""),
+                    g_score.get("rubric_score_0_100", ""),
+                    g_score.get("reference_similarity_0_100", ""),
+                    g_score.get("hybrid_score_0_100", ""),
                 ]
             )
 
@@ -141,12 +157,16 @@ def write_outputs(items: list[dict], output_dir: Path) -> None:
 
 def main() -> None:
     args = parse_args()
-    input_path = Path(args.input)
+    train_path = Path(args.train)
+    test_path = Path(args.test)
     output_dir = Path(args.output_dir)
-    records = load_jsonl(input_path)
-    items = run_pipeline(records)
+    
+    retriever = SimpleRetriever(train_path)
+    records = load_test_jsonl(test_path)
+    items = run_pipeline(records, retriever, args.top_k)
     write_outputs(items, output_dir)
-    print(f"Processed {len(items)} emails.")
+    
+    print(f"Processed {len(items)} test emails with RAG (top-k={args.top_k}).")
     print(f"Wrote outputs to: {output_dir}")
 
 

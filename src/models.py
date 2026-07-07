@@ -31,4 +31,9 @@ class GenerationResult:
     confidence: float
     flags: list[str]
     mode: str
+    retrieved_example_ids: list[str] = None
+    
+    def __post_init__(self):
+        if self.retrieved_example_ids is None:
+            self.retrieved_example_ids = []
 
